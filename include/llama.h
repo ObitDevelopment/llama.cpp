@@ -58,6 +58,16 @@ enum obit_llama_stage_capability_flags {
     OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE = 1 << 0,
 };
 
+struct obit_llama_stage_runtime;
+
+struct obit_llama_stage_params {
+    uint32_t stage_index;
+    uint32_t total_stages;
+    uint32_t layer_start;
+    uint32_t layer_end;
+    bool emit_logits;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1518,6 +1528,13 @@ extern "C" {
     LLAMA_API uint32_t obit_llama_stage_abi_version(void);
     LLAMA_API uint64_t obit_llama_stage_capability_flags(void);
     LLAMA_API const char * obit_llama_stage_unsupported_reason(void);
+    LLAMA_API struct obit_llama_stage_params obit_llama_stage_default_params(void);
+    LLAMA_API struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
+            struct llama_model * model,
+            struct llama_context_params context_params,
+            struct obit_llama_stage_params stage_params);
+    LLAMA_API void obit_llama_stage_free(struct obit_llama_stage_runtime * runtime);
+    LLAMA_API const char * obit_llama_stage_last_error(void);
 
     // Set callback for all future logging events.
     // If this is not called, or NULL is supplied, everything is output on stderr.

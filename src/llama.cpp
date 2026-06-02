@@ -24,6 +24,7 @@
 #include <cstring>
 #include <ctime>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #if defined(_MSC_VER)
@@ -597,4 +598,63 @@ uint64_t obit_llama_stage_capability_flags(void) {
 
 const char * obit_llama_stage_unsupported_reason(void) {
     return "obit libllama stage execution hooks are not implemented in this fork build";
+}
+
+struct obit_llama_stage_runtime {
+    llama_model * model;
+    llama_context * ctx;
+    obit_llama_stage_params params;
+};
+
+static thread_local std::string obit_llama_stage_error;
+
+static void obit_llama_stage_set_error(const std::string & error) {
+    obit_llama_stage_error = error;
+}
+
+struct obit_llama_stage_params obit_llama_stage_default_params(void) {
+    struct obit_llama_stage_params result = {
+        /*.stage_index =*/ 0,
+        /*.total_stages =*/ 1,
+        /*.layer_start  =*/ 0,
+        /*.layer_end    =*/ 0,
+        /*.emit_logits  =*/ true,
+    };
+
+    return result;
+}
+
+struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
+        struct llama_model * model,
+        struct llama_context_params context_params,
+        struct obit_llama_stage_params stage_params) {
+    (void) context_params;
+
+    if (model == nullptr) {
+        obit_llama_stage_set_error("obit libllama stage init requires a non-null llama_model");
+        return nullptr;
+    }
+    if (stage_params.total_stages == 0) {
+        obit_llama_stage_set_error("obit libllama stage init requires total_stages > 0");
+        return nullptr;
+    }
+    if (stage_params.stage_index >= stage_params.total_stages) {
+        obit_llama_stage_set_error("obit libllama stage init requires stage_index < total_stages");
+        return nullptr;
+    }
+    if (stage_params.layer_start >= stage_params.layer_end) {
+        obit_llama_stage_set_error("obit libllama stage init requires layer_start < layer_end");
+        return nullptr;
+    }
+
+    obit_llama_stage_set_error(obit_llama_stage_unsupported_reason());
+    return nullptr;
+}
+
+void obit_llama_stage_free(struct obit_llama_stage_runtime * runtime) {
+    delete runtime;
+}
+
+const char * obit_llama_stage_last_error(void) {
+    return obit_llama_stage_error.c_str();
 }
