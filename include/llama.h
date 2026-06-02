@@ -68,6 +68,15 @@ struct obit_llama_stage_params {
     bool emit_logits;
 };
 
+struct obit_llama_stage_model_info {
+    uint32_t n_layer;
+    uint32_t n_embd;
+    bool has_encoder;
+    bool has_decoder;
+    bool is_recurrent;
+    bool is_hybrid;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1531,6 +1540,9 @@ extern "C" {
     LLAMA_API struct obit_llama_stage_params obit_llama_stage_default_params(void);
     LLAMA_API int32_t obit_llama_stage_validate_params(
             struct obit_llama_stage_params stage_params);
+    LLAMA_API int32_t obit_llama_stage_get_model_info(
+            const struct llama_model * model,
+            struct obit_llama_stage_model_info * out_info);
     LLAMA_API struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
             struct llama_model * model,
             struct llama_context_params context_params,

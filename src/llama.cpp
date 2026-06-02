@@ -642,6 +642,31 @@ int32_t obit_llama_stage_validate_params(struct obit_llama_stage_params stage_pa
     return 0;
 }
 
+int32_t obit_llama_stage_get_model_info(
+        const struct llama_model * model,
+        struct obit_llama_stage_model_info * out_info) {
+    if (model == nullptr) {
+        obit_llama_stage_set_error("obit libllama stage model info requires a non-null llama_model");
+        return -1;
+    }
+    if (out_info == nullptr) {
+        obit_llama_stage_set_error("obit libllama stage model info requires a non-null output pointer");
+        return -1;
+    }
+
+    *out_info = {
+        /*.n_layer      =*/ uint32_t(llama_model_n_layer(model)),
+        /*.n_embd       =*/ uint32_t(llama_model_n_embd(model)),
+        /*.has_encoder  =*/ llama_model_has_encoder(model),
+        /*.has_decoder  =*/ llama_model_has_decoder(model),
+        /*.is_recurrent =*/ llama_model_is_recurrent(model),
+        /*.is_hybrid    =*/ llama_model_is_hybrid(model),
+    };
+
+    obit_llama_stage_set_error("");
+    return 0;
+}
+
 struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
         struct llama_model * model,
         struct llama_context_params context_params,
@@ -653,6 +678,15 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
     }
     if (model == nullptr) {
         obit_llama_stage_set_error("obit libllama stage init requires a non-null llama_model");
+        return nullptr;
+    }
+    struct obit_llama_stage_model_info model_info = {};
+    if (obit_llama_stage_get_model_info(model, &model_info) != 0) {
+        return nullptr;
+    }
+    if (stage_params.layer_end > model_info.n_layer) {
+        obit_llama_stage_set_error(
+                "obit libllama stage params require layer_end <= model layer count");
         return nullptr;
     }
 
