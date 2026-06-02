@@ -48,6 +48,8 @@
 #define LLAMA_STATE_SEQ_MAGIC   LLAMA_FILE_MAGIC_GGSQ
 #define LLAMA_STATE_SEQ_VERSION 2
 
+#define OBIT_LLAMA_ABI_VERSION 1
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1500,6 +1502,11 @@ extern "C" {
 
     // Print system information
     LLAMA_API const char * llama_print_system_info(void);
+
+    // Obit fork ABI marker. This lets downstream loaders distinguish the Obit
+    // fork from upstream-compatible libllama builds before using fork APIs.
+    LLAMA_API uint32_t obit_llama_abi_version(void);
+    LLAMA_API const char * obit_llama_build_info(void);
 
     // Set callback for all future logging events.
     // If this is not called, or NULL is supplied, everything is output on stderr.

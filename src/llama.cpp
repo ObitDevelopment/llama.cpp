@@ -579,3 +579,10 @@ const char * llama_print_system_info(void) {
     return s.c_str();
 }
 
+uint32_t obit_llama_abi_version(void) {
+    return OBIT_LLAMA_ABI_VERSION;
+}
+
+const char * obit_llama_build_info(void) {
+    return "obit-llama abi=1";
+}
