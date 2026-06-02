@@ -584,5 +584,17 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1";
+    return "obit-llama abi=1 stage_abi=1 stage_flags=0";
+}
+
+uint32_t obit_llama_stage_abi_version(void) {
+    return OBIT_LLAMA_STAGE_ABI_VERSION;
+}
+
+uint64_t obit_llama_stage_capability_flags(void) {
+    return OBIT_LLAMA_STAGE_CAPABILITY_NONE;
+}
+
+const char * obit_llama_stage_unsupported_reason(void) {
+    return "obit libllama stage execution hooks are not implemented in this fork build";
 }

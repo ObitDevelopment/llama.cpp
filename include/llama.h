@@ -49,6 +49,14 @@
 #define LLAMA_STATE_SEQ_VERSION 2
 
 #define OBIT_LLAMA_ABI_VERSION 1
+#define OBIT_LLAMA_STAGE_ABI_VERSION 1
+
+enum obit_llama_stage_capability_flags {
+    OBIT_LLAMA_STAGE_CAPABILITY_NONE = 0,
+    // Set when this fork build can execute a contiguous transformer layer range
+    // and exchange boundary tensors with the Obit sidecar.
+    OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE = 1 << 0,
+};
 
 #ifdef __cplusplus
 extern "C" {
@@ -1507,6 +1515,9 @@ extern "C" {
     // fork from upstream-compatible libllama builds before using fork APIs.
     LLAMA_API uint32_t obit_llama_abi_version(void);
     LLAMA_API const char * obit_llama_build_info(void);
+    LLAMA_API uint32_t obit_llama_stage_abi_version(void);
+    LLAMA_API uint64_t obit_llama_stage_capability_flags(void);
+    LLAMA_API const char * obit_llama_stage_unsupported_reason(void);
 
     // Set callback for all future logging events.
     // If this is not called, or NULL is supplied, everything is output on stderr.
