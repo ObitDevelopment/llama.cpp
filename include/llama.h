@@ -1529,6 +1529,8 @@ extern "C" {
     LLAMA_API uint64_t obit_llama_stage_capability_flags(void);
     LLAMA_API const char * obit_llama_stage_unsupported_reason(void);
     LLAMA_API struct obit_llama_stage_params obit_llama_stage_default_params(void);
+    LLAMA_API int32_t obit_llama_stage_validate_params(
+            struct obit_llama_stage_params stage_params);
     LLAMA_API struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
             struct llama_model * model,
             struct llama_context_params context_params,
