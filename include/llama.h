@@ -77,6 +77,28 @@ struct obit_llama_stage_model_info {
     bool is_hybrid;
 };
 
+enum obit_llama_stage_tensor_kind {
+    OBIT_LLAMA_STAGE_TENSOR_KIND_NONE = 0,
+    OBIT_LLAMA_STAGE_TENSOR_KIND_TOKENS = 1,
+    OBIT_LLAMA_STAGE_TENSOR_KIND_HIDDEN_STATE = 2,
+    OBIT_LLAMA_STAGE_TENSOR_KIND_LOGITS = 3,
+};
+
+enum obit_llama_stage_tensor_dtype {
+    OBIT_LLAMA_STAGE_TENSOR_DTYPE_NONE = 0,
+    OBIT_LLAMA_STAGE_TENSOR_DTYPE_I32 = 1,
+    OBIT_LLAMA_STAGE_TENSOR_DTYPE_F32 = 2,
+};
+
+struct obit_llama_stage_boundary_info {
+    uint32_t input_kind;
+    uint32_t input_dtype;
+    uint32_t input_width;
+    uint32_t output_kind;
+    uint32_t output_dtype;
+    uint32_t output_width;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1543,6 +1565,10 @@ extern "C" {
     LLAMA_API int32_t obit_llama_stage_get_model_info(
             const struct llama_model * model,
             struct obit_llama_stage_model_info * out_info);
+    LLAMA_API int32_t obit_llama_stage_get_boundary_info(
+            const struct llama_model * model,
+            struct obit_llama_stage_params stage_params,
+            struct obit_llama_stage_boundary_info * out_info);
     LLAMA_API struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
             struct llama_model * model,
             struct llama_context_params context_params,

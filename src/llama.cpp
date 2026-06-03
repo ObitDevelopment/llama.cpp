@@ -585,7 +585,7 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1 stage_abi=1 stage_flags=0";
+    return "obit-llama abi=1 stage_abi=1 stage_flags=0 boundary_info=1";
 }
 
 uint32_t obit_llama_stage_abi_version(void) {
@@ -661,6 +661,63 @@ int32_t obit_llama_stage_get_model_info(
         /*.has_decoder  =*/ llama_model_has_decoder(model),
         /*.is_recurrent =*/ llama_model_is_recurrent(model),
         /*.is_hybrid    =*/ llama_model_is_hybrid(model),
+    };
+
+    obit_llama_stage_set_error("");
+    return 0;
+}
+
+int32_t obit_llama_stage_get_boundary_info(
+        const struct llama_model * model,
+        struct obit_llama_stage_params stage_params,
+        struct obit_llama_stage_boundary_info * out_info) {
+    if (model == nullptr) {
+        obit_llama_stage_set_error("obit libllama stage boundary info requires a non-null llama_model");
+        return -1;
+    }
+    if (out_info == nullptr) {
+        obit_llama_stage_set_error("obit libllama stage boundary info requires a non-null output pointer");
+        return -1;
+    }
+    if (obit_llama_stage_validate_params(stage_params) != 0) {
+        return -1;
+    }
+
+    struct obit_llama_stage_model_info model_info = {};
+    if (obit_llama_stage_get_model_info(model, &model_info) != 0) {
+        return -1;
+    }
+    if (stage_params.layer_end > model_info.n_layer) {
+        obit_llama_stage_set_error(
+                "obit libllama stage params require layer_end <= model layer count");
+        return -1;
+    }
+
+    const bool first_stage = stage_params.stage_index == 0;
+    const bool output_logits = stage_params.emit_logits;
+    const struct llama_vocab * vocab = llama_model_get_vocab(model);
+    if (output_logits && vocab == nullptr) {
+        obit_llama_stage_set_error("obit libllama stage boundary info requires model vocab for logits output");
+        return -1;
+    }
+
+    *out_info = {
+        /*.input_kind   =*/ uint32_t(first_stage
+                ? OBIT_LLAMA_STAGE_TENSOR_KIND_TOKENS
+                : OBIT_LLAMA_STAGE_TENSOR_KIND_HIDDEN_STATE),
+        /*.input_dtype  =*/ uint32_t(first_stage
+                ? OBIT_LLAMA_STAGE_TENSOR_DTYPE_I32
+                : OBIT_LLAMA_STAGE_TENSOR_DTYPE_F32),
+        /*.input_width  =*/ uint32_t(first_stage
+                ? 1
+                : llama_model_n_embd_inp(model)),
+        /*.output_kind  =*/ uint32_t(output_logits
+                ? OBIT_LLAMA_STAGE_TENSOR_KIND_LOGITS
+                : OBIT_LLAMA_STAGE_TENSOR_KIND_HIDDEN_STATE),
+        /*.output_dtype =*/ uint32_t(OBIT_LLAMA_STAGE_TENSOR_DTYPE_F32),
+        /*.output_width =*/ uint32_t(output_logits
+                ? llama_vocab_n_tokens(vocab)
+                : llama_model_n_embd_out(model)),
     };
 
     obit_llama_stage_set_error("");
