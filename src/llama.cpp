@@ -585,7 +585,7 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1 stage_abi=1 stage_flags=0 boundary_info=1";
+    return "obit-llama abi=1 stage_abi=1 stage_flags=0 boundary_info=1 single_stage=1";
 }
 
 uint32_t obit_llama_stage_abi_version(void) {
@@ -597,7 +597,7 @@ uint64_t obit_llama_stage_capability_flags(void) {
 }
 
 const char * obit_llama_stage_unsupported_reason(void) {
-    return "obit libllama stage execution hooks are not implemented in this fork build";
+    return "obit libllama stage execution hooks support only total_stages=1 covering the full layer range with emit_logits=true";
 }
 
 struct obit_llama_stage_runtime {
@@ -728,8 +728,6 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
         struct llama_model * model,
         struct llama_context_params context_params,
         struct obit_llama_stage_params stage_params) {
-    (void) context_params;
-
     if (obit_llama_stage_validate_params(stage_params) != 0) {
         return nullptr;
     }
@@ -747,14 +745,82 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
         return nullptr;
     }
 
-    obit_llama_stage_set_error(obit_llama_stage_unsupported_reason());
-    return nullptr;
+    const bool is_full_single_stage =
+            stage_params.total_stages == 1 &&
+            stage_params.stage_index  == 0 &&
+            stage_params.layer_start  == 0 &&
+            stage_params.layer_end    == model_info.n_layer &&
+            stage_params.emit_logits;
+
+    if (!is_full_single_stage) {
+        obit_llama_stage_set_error(obit_llama_stage_unsupported_reason());
+        return nullptr;
+    }
+
+    llama_context * ctx = llama_init_from_model(model, context_params);
+    if (ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage init failed to create llama_context for single-stage runtime");
+        return nullptr;
+    }
+
+    auto * runtime = new obit_llama_stage_runtime;
+    runtime->model  = model;
+    runtime->ctx    = ctx;
+    runtime->params = stage_params;
+
+    obit_llama_stage_set_error("");
+    return runtime;
 }
 
 void obit_llama_stage_free(struct obit_llama_stage_runtime * runtime) {
+    if (runtime == nullptr) {
+        return;
+    }
+    if (runtime->ctx != nullptr) {
+        llama_free(runtime->ctx);
+    }
     delete runtime;
 }
 
 const char * obit_llama_stage_last_error(void) {
     return obit_llama_stage_error.c_str();
+}
+
+int32_t obit_llama_stage_decode(
+        struct obit_llama_stage_runtime * runtime,
+        struct llama_batch batch) {
+    if (runtime == nullptr || runtime->ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage decode requires a runtime with an initialized context");
+        return -1;
+    }
+
+    const int32_t rc = llama_decode(runtime->ctx, batch);
+    if (rc != 0) {
+        obit_llama_stage_set_error(
+                std::string("obit libllama stage decode forwarded a non-zero llama_decode return: ") +
+                std::to_string(rc));
+    } else {
+        obit_llama_stage_set_error("");
+    }
+    return rc;
+}
+
+float * obit_llama_stage_get_logits_ith(
+        struct obit_llama_stage_runtime * runtime,
+        int32_t i) {
+    if (runtime == nullptr || runtime->ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage get_logits requires a runtime with an initialized context");
+        return nullptr;
+    }
+    float * logits = llama_get_logits_ith(runtime->ctx, i);
+    if (logits == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage get_logits forwarded a null llama_get_logits_ith result");
+    } else {
+        obit_llama_stage_set_error("");
+    }
+    return logits;
 }
