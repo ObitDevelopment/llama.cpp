@@ -1576,13 +1576,16 @@ extern "C" {
     LLAMA_API void obit_llama_stage_free(struct obit_llama_stage_runtime * runtime);
     LLAMA_API const char * obit_llama_stage_last_error(void);
 
-    // Stage runtime decode/sample surface. Today this is only implemented for
-    // the degenerate single-stage case (total_stages=1, layer range covering
-    // all decoder layers, emit_logits=true); init returns null otherwise.
+    // Stage runtime decode/sample surface.
     LLAMA_API int32_t obit_llama_stage_decode(
             struct obit_llama_stage_runtime * runtime,
             struct llama_batch batch);
     LLAMA_API float * obit_llama_stage_get_logits_ith(
+            struct obit_llama_stage_runtime * runtime,
+            int32_t i);
+    // For non-last stages (emit_logits=false), the runtime produces a
+    // hidden state at each requested output row. Returns NULL on misuse.
+    LLAMA_API float * obit_llama_stage_get_embeddings_ith(
             struct obit_llama_stage_runtime * runtime,
             int32_t i);
 

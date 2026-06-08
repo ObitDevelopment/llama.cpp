@@ -85,6 +85,13 @@ llama_context::llama_context(
 
     cparams.ctx_type          = params.ctx_type;
 
+    // Obit fork: stage-aware defaults. Set to inactive here; the Obit stage
+    // runtime entrypoint overrides these after constructing the context.
+    cparams.obit_stage_active      = false;
+    cparams.obit_stage_emit_logits = true;
+    cparams.obit_stage_layer_start = 0;
+    cparams.obit_stage_layer_end   = 0;
+
     // Initialize backend samplers here so they are part of the sampling graph
     // before the reserve passes run later in this function. This avoids a later
     // re-reserve when graph nodes change.
@@ -696,6 +703,20 @@ const llama_model & llama_context::get_model() const {
 
 const llama_cparams & llama_context::get_cparams() const {
     return cparams;
+}
+
+void llama_context::set_obit_stage_params(
+        bool     active,
+        uint32_t layer_start,
+        uint32_t layer_end,
+        bool     emit_logits) {
+    cparams.obit_stage_active      = active;
+    cparams.obit_stage_layer_start = layer_start;
+    cparams.obit_stage_layer_end   = layer_end;
+    cparams.obit_stage_emit_logits = emit_logits;
+    // Non-final stages produce hidden states; align llama.cpp's
+    // embeddings mode so llama_get_embeddings_ith returns those rows.
+    cparams.embeddings = active && !emit_logits;
 }
 
 ggml_backend_sched_t llama_context::get_sched() const {

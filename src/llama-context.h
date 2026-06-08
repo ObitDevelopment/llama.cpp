@@ -59,6 +59,17 @@ struct llama_context {
     const llama_model   & get_model()   const;
     const llama_cparams & get_cparams() const;
 
+    // Obit fork: configure stage-aware execution after context construction.
+    // Layer range is half-open [layer_start, layer_end). emit_logits=false
+    // skips output_norm + lm_head and exposes the post-loop hidden state
+    // instead. The graph must be re-reserved by the caller via sched_reserve()
+    // if it was already built for a different stage shape.
+    void set_obit_stage_params(
+            bool     active,
+            uint32_t layer_start,
+            uint32_t layer_end,
+            bool     emit_logits);
+
     ggml_backend_sched_t get_sched() const;
 
     uint32_t n_ctx()     const;

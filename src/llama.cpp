@@ -585,7 +585,7 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1 stage_abi=1 stage_flags=0 boundary_info=1 single_stage=1";
+    return "obit-llama abi=1 stage_abi=1 stage_flags=1 boundary_info=1 single_stage=1 layer_range=qwen3";
 }
 
 uint32_t obit_llama_stage_abi_version(void) {
@@ -593,11 +593,20 @@ uint32_t obit_llama_stage_abi_version(void) {
 }
 
 uint64_t obit_llama_stage_capability_flags(void) {
-    return OBIT_LLAMA_STAGE_CAPABILITY_NONE;
+    // Process-global capability: at least one supported architecture exposes
+    // layer-range execution. Per-architecture support is queried via
+    // obit_llama_stage_get_model_info / obit_llama_stage_init_from_model.
+    return OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE;
 }
 
 const char * obit_llama_stage_unsupported_reason(void) {
-    return "obit libllama stage execution hooks support only total_stages=1 covering the full layer range with emit_logits=true";
+    return "obit libllama stage execution hooks support only the qwen3 architecture today; other architectures fail closed before StageReady";
+}
+
+static bool obit_llama_arch_supports_layer_range(llm_arch arch) {
+    // Slice 2 starts with Qwen3 only; expand as additional per-arch graph
+    // builders are taught to honor cparams.obit_stage_* bounds.
+    return arch == LLM_ARCH_QWEN3;
 }
 
 struct obit_llama_stage_runtime {
@@ -752,16 +761,48 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
             stage_params.layer_end    == model_info.n_layer &&
             stage_params.emit_logits;
 
+    const bool is_first_stage = stage_params.stage_index == 0;
+    const bool is_last_stage  = stage_params.stage_index + 1 == stage_params.total_stages;
+
     if (!is_full_single_stage) {
-        obit_llama_stage_set_error(obit_llama_stage_unsupported_reason());
-        return nullptr;
+        if (!obit_llama_arch_supports_layer_range(model->arch)) {
+            obit_llama_stage_set_error(obit_llama_stage_unsupported_reason());
+            return nullptr;
+        }
+        // For non-degenerate stages the boundary semantics must agree with
+        // the stage index: first stage takes token input, last stage emits
+        // logits. Reject mismatches early so the harness fails before
+        // running a bad graph.
+        if (!is_first_stage && stage_params.layer_start == 0) {
+            obit_llama_stage_set_error(
+                    "obit libllama stage init: non-stage-0 must have layer_start > 0");
+            return nullptr;
+        }
+        if (is_last_stage && !stage_params.emit_logits) {
+            obit_llama_stage_set_error(
+                    "obit libllama stage init: last stage must set emit_logits=true");
+            return nullptr;
+        }
+        if (!is_last_stage && stage_params.emit_logits) {
+            obit_llama_stage_set_error(
+                    "obit libllama stage init: non-last stage must set emit_logits=false");
+            return nullptr;
+        }
     }
 
     llama_context * ctx = llama_init_from_model(model, context_params);
     if (ctx == nullptr) {
         obit_llama_stage_set_error(
-                "obit libllama stage init failed to create llama_context for single-stage runtime");
+                "obit libllama stage init failed to create llama_context for stage runtime");
         return nullptr;
+    }
+
+    if (!is_full_single_stage) {
+        ctx->set_obit_stage_params(
+                /*active=*/true,
+                /*layer_start=*/stage_params.layer_start,
+                /*layer_end=*/stage_params.layer_end,
+                /*emit_logits=*/stage_params.emit_logits);
     }
 
     auto * runtime = new obit_llama_stage_runtime;
@@ -823,4 +864,22 @@ float * obit_llama_stage_get_logits_ith(
         obit_llama_stage_set_error("");
     }
     return logits;
+}
+
+float * obit_llama_stage_get_embeddings_ith(
+        struct obit_llama_stage_runtime * runtime,
+        int32_t i) {
+    if (runtime == nullptr || runtime->ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage get_embeddings requires a runtime with an initialized context");
+        return nullptr;
+    }
+    float * embd = llama_get_embeddings_ith(runtime->ctx, i);
+    if (embd == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage get_embeddings forwarded a null llama_get_embeddings_ith result");
+    } else {
+        obit_llama_stage_set_error("");
+    }
+    return embd;
 }
