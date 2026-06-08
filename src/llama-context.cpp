@@ -153,6 +153,13 @@ llama_context::llama_context(
         cparams.ctx_other = params.ctx_other;
     }
 
+    // Obit fork: stage-aware defaults. Set to inactive here; the Obit stage
+    // runtime entrypoint overrides these after constructing the context.
+    cparams.obit_stage_active      = false;
+    cparams.obit_stage_emit_logits = true;
+    cparams.obit_stage_layer_start = 0;
+    cparams.obit_stage_layer_end   = 0;
+
     if (model.arch == LLM_ARCH_EAGLE3 || model.arch == LLM_ARCH_DFLASH) {
         if (model.tok_embd == nullptr || model.output == nullptr) {
             if (params.ctx_other == nullptr) {
@@ -804,6 +811,20 @@ const llama_model & llama_context::get_model() const {
 
 const llama_cparams & llama_context::get_cparams() const {
     return cparams;
+}
+
+void llama_context::set_obit_stage_params(
+        bool     active,
+        uint32_t layer_start,
+        uint32_t layer_end,
+        bool     emit_logits) {
+    cparams.obit_stage_active      = active;
+    cparams.obit_stage_layer_start = layer_start;
+    cparams.obit_stage_layer_end   = layer_end;
+    cparams.obit_stage_emit_logits = emit_logits;
+    // Non-final stages produce hidden states; align llama.cpp's
+    // embeddings mode so llama_get_embeddings_ith returns those rows.
+    cparams.embeddings = active && !emit_logits;
 }
 
 ggml_backend_sched_t llama_context::get_sched() const {
