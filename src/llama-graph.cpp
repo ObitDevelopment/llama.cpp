@@ -1807,6 +1807,22 @@ ggml_tensor * llm_graph_context::build_inp_embd(ggml_tensor * tok_embd) const {
     cb(inp->embd, "inp_embd", -1);
     ggml_set_input(inp->embd);
 
+    // Obit fork: non-stage-0 stages of a DPI pipeline always receive hidden
+    // states (ubatch.embd) as input and never look tokens up against
+    // tok_embd. When the loader drops tok_embd on those stages, skip the
+    // token-path/select entirely so the worst-case sched_reserve graph
+    // doesn't deref a null tok_embd.
+    if (tok_embd == nullptr) {
+        ggml_tensor * cur = inp->embd;
+        res->t_inp_embd = cur;
+        if (hparams.f_embedding_scale != 0.0f) {
+            cur = ggml_scale(ctx0, cur, hparams.f_embedding_scale);
+        }
+        cb(cur, "embd", -1);
+        res->add_input(std::move(inp));
+        return cur;
+    }
+
     // select one of the 2 inputs, based on the batch contents
     // ref: https://github.com/ggml-org/llama.cpp/pull/18550
     std::array<ggml_tensor *, 2> inps;
