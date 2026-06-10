@@ -773,11 +773,14 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
         // the stage index: first stage takes token input, last stage emits
         // logits. Reject mismatches early so the harness fails before
         // running a bad graph.
-        if (!is_first_stage && stage_params.layer_start == 0) {
-            obit_llama_stage_set_error(
-                    "obit libllama stage init: non-stage-0 must have layer_start > 0");
-            return nullptr;
-        }
+        //
+        // Note: a previous version of this check rejected
+        // `!is_first_stage && layer_start == 0` on the assumption that
+        // every stage loads the same full-model GGUF. That assumption is
+        // false for compile-time per-stage GGUFs (each stage loads only
+        // its own slice, so layer_start is always 0 relative to the loaded
+        // model). The check was removed; emit_logits below is the
+        // sufficient role check.
         if (is_last_stage && !stage_params.emit_logits) {
             obit_llama_stage_set_error(
                     "obit libllama stage init: last stage must set emit_logits=true");
