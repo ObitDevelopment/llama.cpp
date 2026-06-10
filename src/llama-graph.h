@@ -944,6 +944,47 @@ struct llm_graph_context {
     ggml_tensor * build_inp_mean() const;
     ggml_tensor * build_inp_cls() const;
 
+    //
+    // Obit fork: stage-aware graph helpers
+    //
+    // The per-arch stage-aware boilerplate (layer-loop bounds, inp_out_ids
+    // gating, conditional output_norm + lm_head vs hidden-state emission at
+    // the graph boundary) lives here so per-arch graph builders only need
+    // small, mechanical changes to participate in DPI. Default values keep
+    // upstream behavior unchanged for arches that haven't opted in.
+    //
+    // Per-arch porting pattern:
+    //   1. `const llm_stage_bounds stage = get_stage_bounds();`
+    //   2. Replace `0` / `n_layer` in the layer loop with
+    //      `stage.layer_start` / `stage.layer_end`.
+    //   3. Gate `build_inp_out_ids()` on `stage.emit_logits`.
+    //   4. Replace the trailing `build_norm` + `build_lora_mm` lm_head
+    //      block with `build_stage_output_or_boundary(...)`.
+
+    /// Resolved stage execution bounds for the current graph build.
+    /// `layer_start` / `layer_end` default to `[0, n_layer)` when the
+    /// stage is inactive; per-arch loops can use these unconditionally.
+    struct llm_stage_bounds {
+        bool     active;
+        bool     emit_logits;
+        uint32_t layer_start;
+        uint32_t layer_end;
+    };
+
+    llm_stage_bounds get_stage_bounds() const;
+
+    /// Per-arch terminal block: either run `output_norm` + `lm_head`
+    /// (standard) or emit the post-loop hidden state as the stage
+    /// boundary tensor. Stores `res->t_embd` / `res->t_logits` and calls
+    /// `ggml_build_forward_expand(gf, ...)` exactly once. The arch
+    /// builder should `return` immediately after.
+    void build_stage_output_or_boundary(
+            ggml_tensor * cur,
+            ggml_tensor * output_norm_w,
+            ggml_tensor * output_w,
+            ggml_tensor * output_w_s,
+            llm_norm_type norm_type) const;
+
     ggml_tensor * build_inp_cross_embd() const;
     ggml_tensor * build_inp_pos_bucket_enc() const;
     ggml_tensor * build_inp_pos_bucket_dec() const;

@@ -1965,6 +1965,54 @@ ggml_tensor * llm_graph_context::build_inp_cls() const {
     return cur;
 }
 
+// Obit fork: resolve the stage-execution bounds for this graph build.
+// When `obit_stage_active` is false (the upstream / non-DPI case),
+// returns `[0, n_layer)` with `emit_logits = true` so per-arch loops
+// using these bounds match the standard behavior exactly.
+llm_graph_context::llm_stage_bounds llm_graph_context::get_stage_bounds() const {
+    llm_stage_bounds out;
+    out.active      = cparams.obit_stage_active;
+    out.emit_logits = !out.active || cparams.obit_stage_emit_logits;
+    out.layer_start = out.active ? cparams.obit_stage_layer_start : 0u;
+    out.layer_end   = out.active ? cparams.obit_stage_layer_end   : uint32_t(n_layer);
+    GGML_ASSERT(out.layer_start <= out.layer_end);
+    GGML_ASSERT(out.layer_end   <= uint32_t(n_layer));
+    return out;
+}
+
+// Obit fork: terminal block for per-arch graph builders. Either runs
+// `output_norm + lm_head` (the standard / last-stage case) or emits the
+// post-loop hidden state as the stage boundary tensor. Stores
+// `res->t_embd` and `res->t_logits` (when applicable) and finalizes the
+// graph; the caller should `return` immediately after.
+void llm_graph_context::build_stage_output_or_boundary(
+        ggml_tensor * cur,
+        ggml_tensor * output_norm_w,
+        ggml_tensor * output_w,
+        ggml_tensor * output_w_s,
+        llm_norm_type norm_type) const {
+    const llm_stage_bounds stage = get_stage_bounds();
+    if (stage.active && !stage.emit_logits) {
+        // Non-last stage: emit the post-loop hidden state. The runtime
+        // reads it via llama_get_embeddings_ith() and ships it to the
+        // next stage as the boundary activation.
+        cb(cur, "result_stage_hidden", -1);
+        res->t_embd = cur;
+        ggml_build_forward_expand(gf, cur);
+        return;
+    }
+
+    cur = build_norm(cur, output_norm_w, /*mw_b*/ NULL, norm_type, -1);
+    cb(cur, "result_norm", -1);
+    res->t_embd = cur;
+
+    cur = build_lora_mm(output_w, cur, output_w_s);
+    cb(cur, "result_output", -1);
+    res->t_logits = cur;
+
+    ggml_build_forward_expand(gf, cur);
+}
+
 ggml_tensor * llm_graph_context::build_inp_cross_embd() const {
     auto inp = std::make_unique<llm_graph_input_cross_embd>(cross);
 
