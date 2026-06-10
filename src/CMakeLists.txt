@@ -45,6 +45,13 @@ set(LLAMA_CORE_SOURCES
 
 add_library(llama
             ../include/llama.h
+            # Obit fork: stage-aware ABI header + translation unit. The whole
+            # fork ABI lives in these two files so upstream merges against the
+            # neighboring core files don't conflict with our additions -- which
+            # is also why they are listed here rather than appended to
+            # upstream's LLAMA_CORE_SOURCES.
+            ../include/llama-obit-stage.h
+            llama-obit-stage.cpp
             ${LLAMA_CORE_SOURCES}
             unicode.h
             ${LLAMA_MODELS_SOURCES}
@@ -60,6 +67,11 @@ set_target_properties(llama PROPERTIES
 
 # exclude non-model sources from unity build
 set_source_files_properties(${LLAMA_CORE_SOURCES} ../include/llama.h unicode.h
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
+# Obit fork: the stage ABI translation unit is a core source too, so it is
+# excluded from the unity build for the same reason upstream excludes the rest.
+set_source_files_properties(llama-obit-stage.cpp ../include/llama-obit-stage.h
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
 configure_file(llama-version.h.in ${CMAKE_CURRENT_BINARY_DIR}/llama-version.h @ONLY)
