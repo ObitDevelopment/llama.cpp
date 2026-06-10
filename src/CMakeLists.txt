@@ -10,6 +10,11 @@ file(GLOB LLAMA_MODELS_SOURCES "models/*.cpp")
 
 add_library(llama
             ../include/llama.h
+            # Obit fork: stage-aware ABI header + translation unit. The whole
+            # fork ABI lives in these two files so upstream merges against the
+            # neighboring core files don't conflict with our additions.
+            ../include/llama-obit-stage.h
+            llama-obit-stage.cpp
             llama.cpp
             llama-adapter.cpp
             llama-arch.cpp
