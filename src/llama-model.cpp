@@ -1427,12 +1427,7 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
             }
         }
     }
-    // Obit fork: when an explicit load layer range is set, the loader
-    // intentionally skips block.<i>.* tensors outside the range — pass
-    // partial=true so the tensor-count consistency check tolerates that.
-    const bool obit_partial_load =
-        params.obit_load_layer_start >= 0 || params.obit_load_layer_end >= 0;
-    ml.done_getting_tensors(obit_partial_load);
+    ml.done_getting_tensors();
 
     GGML_ASSERT(!(output && tok_embd &&
             strcmp(output->name, tok_embd->name) == 0 &&
@@ -1623,26 +1618,6 @@ uint32_t llama_model::n_gpu_layers() const {
 
 llama_split_mode llama_model::split_mode() const {
     return params.split_mode;
-}
-
-uint32_t llama_model::obit_load_layer_start() const {
-    if (params.obit_load_layer_start < 0) return 0;
-    const uint32_t s = (uint32_t)params.obit_load_layer_start;
-    return s > hparams.n_layer ? hparams.n_layer : s;
-}
-
-uint32_t llama_model::obit_load_layer_end() const {
-    if (params.obit_load_layer_end < 0) return hparams.n_layer;
-    const uint32_t e = (uint32_t)params.obit_load_layer_end;
-    return e > hparams.n_layer ? hparams.n_layer : e;
-}
-
-bool llama_model::obit_load_includes_input() const {
-    return obit_load_layer_start() == 0;
-}
-
-bool llama_model::obit_load_includes_output() const {
-    return obit_load_layer_end() == hparams.n_layer;
 }
 
 std::map<ggml_backend_buffer_type_t, size_t> llama_model::memory_breakdown() const {
@@ -2197,8 +2172,6 @@ llama_model_params llama_model_default_params() {
         /*.use_extra_bufts             =*/ true,
         /*.no_host                     =*/ false,
         /*.no_alloc                    =*/ false,
-        /*.obit_load_layer_start        =*/ -1,
-        /*.obit_load_layer_end          =*/ -1,
     };
 
     return result;

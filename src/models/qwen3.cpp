@@ -14,33 +14,20 @@ void llama_model_qwen3::load_arch_hparams(llama_model_loader & ml) {
 void llama_model_qwen3::load_arch_tensors(llama_model_loader &) {
     LLAMA_LOAD_LOCALS;
 
-    // Obit fork: pipeline-parallel layer slicing. When the caller passed an
-    // obit_load_layer_range, skip the per-layer create_tensor calls outside
-    // it, and skip input embeddings on non-stage-0 / output on non-last-
-    // stage. Default range = [0, n_layer) so upstream behavior is unchanged.
-    const uint32_t load_start = obit_load_layer_start();
-    const uint32_t load_end   = obit_load_layer_end();
-    const bool     load_input  = obit_load_includes_input();
-    const bool     load_output = obit_load_includes_output();
+    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
 
-    if (load_input) {
-        tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
+    // output
+    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
+    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
+    // if output is NULL, init from the input tok embed
+    if (output == NULL) {
+        output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_DUPLICATED);
     }
 
-    if (load_output) {
-        // output
-        output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
-        output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
-        // if output is NULL, init from the input tok embed
-        if (output == NULL) {
-            output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_DUPLICATED);
-        }
+    // output rerank head
+    cls_out = create_tensor(tn(LLM_TENSOR_CLS_OUT, "weight"), {n_embd, hparams.n_cls_out}, TENSOR_NOT_REQUIRED);
 
-        // output rerank head
-        cls_out = create_tensor(tn(LLM_TENSOR_CLS_OUT, "weight"), {n_embd, hparams.n_cls_out}, TENSOR_NOT_REQUIRED);
-    }
-
-    for (int i = (int)load_start; i < (int)load_end; ++i) {
+    for (int i = 0; i < n_layer; ++i) {
         auto & layer = layers[i];
 
         layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);

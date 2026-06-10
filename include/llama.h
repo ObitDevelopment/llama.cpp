@@ -375,17 +375,6 @@ extern "C" {
         bool use_extra_bufts; // use extra buffer types (used for weight repacking)
         bool no_host;         // bypass host buffer allowing extra buffers to be used
         bool no_alloc;        // only load metadata and simulate memory allocations
-
-        // Obit fork: pipeline-parallel load-time layer slicing. When set, the
-        // model loader skips block.<i>.* tensors for i outside
-        // [obit_load_layer_start, obit_load_layer_end), and also skips the
-        // input token embeddings if obit_load_layer_start > 0 and the output
-        // (lm_head / output_norm) if obit_load_layer_end < n_layer. -1 means
-        // "load everything" (the default and the behavior unchanged from
-        // upstream). Pair with obit_llama_stage_params on init_from_model so
-        // the runtime executes exactly the layers it has loaded.
-        int32_t obit_load_layer_start;
-        int32_t obit_load_layer_end;
     };
 
     struct llama_sampler_seq_config {

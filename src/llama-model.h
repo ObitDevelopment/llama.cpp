@@ -603,16 +603,6 @@ struct llama_model {
     uint32_t n_gpu_layers() const;
     llama_split_mode split_mode() const;
 
-    // Obit fork: resolved layer-range load filter. Returns [0, n_layer) when
-    // the caller passed -1 (the default) for either bound, otherwise the
-    // clamped range. Per-arch loaders consult these to skip block.<i>.*
-    // tensors for i outside the range. Stage 0 (start == 0) loads tok_embd;
-    // last stage (end == n_layer) loads output_norm + lm_head.
-    uint32_t obit_load_layer_start() const;
-    uint32_t obit_load_layer_end() const;
-    bool     obit_load_includes_input() const;   // true iff start == 0
-    bool     obit_load_includes_output() const;  // true iff end == n_layer
-
     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
 
     // total number of parameters in the model

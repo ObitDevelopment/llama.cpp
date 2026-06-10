@@ -85,19 +85,12 @@ llama_context::llama_context(
 
     cparams.ctx_type          = params.ctx_type;
 
-    // Obit fork: stage-aware defaults. If the model was loaded with a slice
-    // (obit_load_layer_range), seed cparams with that range so sched_reserve
-    // builds a graph that only references loaded layers. The stage runtime
-    // entrypoint may later refine these via llama_context_obit_set_stage,
-    // but for sched_reserve to not deref null layer tensors the range must
-    // already be in place when llama_init_from_model returns.
-    const uint32_t load_start = model.obit_load_layer_start();
-    const uint32_t load_end   = model.obit_load_layer_end();
-    const bool     sliced     = !(load_start == 0 && load_end == hparams.n_layer);
-    cparams.obit_stage_active      = sliced;
-    cparams.obit_stage_emit_logits = model.obit_load_includes_output();
-    cparams.obit_stage_layer_start = sliced ? load_start : 0;
-    cparams.obit_stage_layer_end   = sliced ? load_end   : 0;
+    // Obit fork: stage-aware defaults. Set to inactive here; the Obit stage
+    // runtime entrypoint overrides these after constructing the context.
+    cparams.obit_stage_active      = false;
+    cparams.obit_stage_emit_logits = true;
+    cparams.obit_stage_layer_start = 0;
+    cparams.obit_stage_layer_end   = 0;
 
     // Initialize backend samplers here so they are part of the sampling graph
     // before the reserve passes run later in this function. This avoids a later
