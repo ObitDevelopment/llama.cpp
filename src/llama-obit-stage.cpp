@@ -19,7 +19,7 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1 stage_abi=1 stage_flags=1 boundary_info=1 single_stage=1 layer_range=qwen3";
+    return "obit-llama abi=1 stage_abi=2 stage_flags=3 boundary_info=1 single_stage=1 layer_range=qwen3 clear_seq=1";
 }
 
 uint32_t obit_llama_stage_abi_version(void) {
@@ -30,7 +30,8 @@ uint64_t obit_llama_stage_capability_flags(void) {
     // Process-global capability: at least one supported architecture exposes
     // layer-range execution. Per-architecture support is queried via
     // obit_llama_stage_get_model_info / obit_llama_stage_init_from_model.
-    return OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE;
+    return OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE
+        |  OBIT_LLAMA_STAGE_CAPABILITY_CLEAR_SEQUENCE;
 }
 
 const char * obit_llama_stage_unsupported_reason(void) {
@@ -319,4 +320,31 @@ float * obit_llama_stage_get_embeddings_ith(
         obit_llama_stage_set_error("");
     }
     return embd;
+}
+
+bool obit_llama_stage_clear_sequence(
+        struct obit_llama_stage_runtime * runtime,
+        int32_t seq_id,
+        int32_t p0,
+        int32_t p1) {
+    if (runtime == nullptr || runtime->ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage clear_sequence requires a runtime with an initialized context");
+        return false;
+    }
+    llama_memory_t mem = llama_get_memory(runtime->ctx);
+    if (mem == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage clear_sequence: llama_get_memory returned null");
+        return false;
+    }
+    const bool ok = llama_memory_seq_rm(mem, (llama_seq_id) seq_id, (llama_pos) p0, (llama_pos) p1);
+    if (!ok) {
+        obit_llama_stage_set_error(
+                std::string("obit libllama stage clear_sequence: llama_memory_seq_rm failed for seq_id=") +
+                std::to_string(seq_id));
+    } else {
+        obit_llama_stage_set_error("");
+    }
+    return ok;
 }
