@@ -42,13 +42,17 @@ struct llama_batch;
 #endif
 
 #define OBIT_LLAMA_ABI_VERSION 1
-#define OBIT_LLAMA_STAGE_ABI_VERSION 1
+#define OBIT_LLAMA_STAGE_ABI_VERSION 2
 
 enum obit_llama_stage_capability_flags {
     OBIT_LLAMA_STAGE_CAPABILITY_NONE = 0,
     // Set when this fork build can execute a contiguous transformer layer range
     // and exchange boundary tensors with the Obit sidecar.
     OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE = 1 << 0,
+    // Set when this fork build exposes obit_llama_stage_clear_sequence so the
+    // DPI chat driver can reset KV-cache state between sibling requests that
+    // share a libllama seq_id slot.
+    OBIT_LLAMA_STAGE_CAPABILITY_CLEAR_SEQUENCE = 1 << 1,
 };
 
 struct obit_llama_stage_runtime;
@@ -132,6 +136,17 @@ extern "C" {
     LLAMA_API float * obit_llama_stage_get_embeddings_ith(
             struct obit_llama_stage_runtime * runtime,
             int32_t i);
+
+    // Clear cached KV entries for a sequence on this stage's context.
+    // p0/p1 follow the same convention as llama_memory_seq_rm: pass -1/-1 to
+    // drop every position for `seq_id`. Returns true on success; on failure
+    // call obit_llama_stage_last_error() for details. Used by the DPI chat
+    // driver to reset a slot's KV before reusing its seq_id for a new request.
+    LLAMA_API bool obit_llama_stage_clear_sequence(
+            struct obit_llama_stage_runtime * runtime,
+            int32_t seq_id,
+            int32_t p0,
+            int32_t p1);
 
 #ifdef __cplusplus
 }
