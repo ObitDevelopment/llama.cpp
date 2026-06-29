@@ -585,7 +585,7 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1 stage_abi=1 stage_flags=1 boundary_info=1";
+    return "obit-llama abi=1 stage_abi=2 stage_flags=1 boundary_info=1";
 }
 
 uint32_t obit_llama_stage_abi_version(void) {

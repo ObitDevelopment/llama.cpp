@@ -49,7 +49,11 @@
 #define LLAMA_STATE_SEQ_VERSION 2
 
 #define OBIT_LLAMA_ABI_VERSION 1
-#define OBIT_LLAMA_STAGE_ABI_VERSION 1
+// Stage ABI v1: lifecycle + info only (init_from_model returned nullptr).
+// Stage ABI v2: adds working init_from_model + decode + get_logits_ith
+//               + get_embeddings_ith + clear_sequence. Capability flag
+//               OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE is set on v2.
+#define OBIT_LLAMA_STAGE_ABI_VERSION 2
 
 enum obit_llama_stage_capability_flags {
     OBIT_LLAMA_STAGE_CAPABILITY_NONE = 0,
