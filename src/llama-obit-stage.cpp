@@ -19,7 +19,7 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1 stage_abi=2 stage_flags=3 boundary_info=1 single_stage=1 layer_range=qwen3 clear_seq=1";
+    return "obit-llama abi=1 stage_abi=2 stage_flags=3 boundary_info=1 single_stage=1 layer_range=qwen3+qwen3moe clear_seq=1";
 }
 
 uint32_t obit_llama_stage_abi_version(void) {
@@ -35,13 +35,15 @@ uint64_t obit_llama_stage_capability_flags(void) {
 }
 
 const char * obit_llama_stage_unsupported_reason(void) {
-    return "obit libllama stage execution hooks support only the qwen3 architecture today; other architectures fail closed before StageReady";
+    return "obit libllama stage execution hooks support only qwen3 and qwen3moe architectures today; other architectures fail closed before StageReady";
 }
 
 static bool obit_llama_arch_supports_layer_range(llm_arch arch) {
-    // Slice 2 starts with Qwen3 only; expand as additional per-arch graph
-    // builders are taught to honor cparams.obit_stage_* bounds.
-    return arch == LLM_ARCH_QWEN3;
+    // Expand as additional per-arch graph builders are taught to honor
+    // cparams.obit_stage_* bounds via get_stage_bounds() +
+    // build_stage_output_or_boundary().
+    return arch == LLM_ARCH_QWEN3
+        || arch == LLM_ARCH_QWEN3MOE;
 }
 
 struct obit_llama_stage_runtime {
