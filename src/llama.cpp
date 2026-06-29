@@ -585,7 +585,7 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1 stage_abi=1 stage_flags=0 boundary_info=1";
+    return "obit-llama abi=1 stage_abi=1 stage_flags=1 boundary_info=1";
 }
 
 uint32_t obit_llama_stage_abi_version(void) {
@@ -593,11 +593,21 @@ uint32_t obit_llama_stage_abi_version(void) {
 }
 
 uint64_t obit_llama_stage_capability_flags(void) {
-    return OBIT_LLAMA_STAGE_CAPABILITY_NONE;
+    // Stage execution is now wired up: obit_llama_stage_{init_from_model,
+    // decode, get_logits_ith, get_embeddings_ith, clear_sequence} delegate
+    // to the underlying llama_context loaded from a per-stage GGUF (see
+    // cc-native-gguf::dpi_stage_splitter). The per-stage GGUF is a
+    // self-contained model covering the assigned [layer_start, layer_end),
+    // so contiguous layer-range execution is what we report.
+    return (uint64_t) OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE;
 }
 
 const char * obit_llama_stage_unsupported_reason(void) {
-    return "obit libllama stage execution hooks are not implemented in this fork build";
+    // Capability flag OBIT_LLAMA_STAGE_CAPABILITY_LAYER_RANGE is now set,
+    // so this should rarely be consulted. Kept non-empty as a defensive
+    // signal in case a caller mis-uses the API; the actual call-site
+    // errors come back through obit_llama_stage_last_error().
+    return "";
 }
 
 struct obit_llama_stage_runtime {
@@ -728,8 +738,6 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
         struct llama_model * model,
         struct llama_context_params context_params,
         struct obit_llama_stage_params stage_params) {
-    (void) context_params;
-
     if (obit_llama_stage_validate_params(stage_params) != 0) {
         return nullptr;
     }
@@ -747,12 +755,91 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
         return nullptr;
     }
 
-    obit_llama_stage_set_error(obit_llama_stage_unsupported_reason());
-    return nullptr;
+    // Non-last stages emit the boundary hidden state instead of logits. The
+    // upstream embeddings flag drives whether decode populates the logits
+    // tensor (false) or the embeddings tensor (true). The downstream
+    // consumer reads them via obit_llama_stage_get_{logits,embeddings}_ith.
+    if (!stage_params.emit_logits) {
+        context_params.embeddings = true;
+    }
+
+    llama_context * ctx = llama_init_from_model(model, context_params);
+    if (ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage init failed to create llama_context (llama_init_from_model returned nullptr)");
+        return nullptr;
+    }
+
+    auto * runtime = new obit_llama_stage_runtime{};
+    runtime->model  = model;
+    runtime->ctx    = ctx;
+    runtime->params = stage_params;
+    obit_llama_stage_set_error("");
+    return runtime;
 }
 
 void obit_llama_stage_free(struct obit_llama_stage_runtime * runtime) {
+    if (runtime == nullptr) {
+        return;
+    }
+    if (runtime->ctx != nullptr) {
+        llama_free(runtime->ctx);
+        runtime->ctx = nullptr;
+    }
     delete runtime;
+}
+
+int32_t obit_llama_stage_decode(
+        struct obit_llama_stage_runtime * runtime,
+        struct llama_batch batch) {
+    if (runtime == nullptr || runtime->ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage decode requires a runtime created by obit_llama_stage_init_from_model");
+        return -1;
+    }
+    obit_llama_stage_set_error("");
+    return llama_decode(runtime->ctx, batch);
+}
+
+float * obit_llama_stage_get_logits_ith(
+        struct obit_llama_stage_runtime * runtime,
+        int32_t i) {
+    if (runtime == nullptr || runtime->ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage get_logits_ith requires a runtime created by obit_llama_stage_init_from_model");
+        return nullptr;
+    }
+    return llama_get_logits_ith(runtime->ctx, i);
+}
+
+float * obit_llama_stage_get_embeddings_ith(
+        struct obit_llama_stage_runtime * runtime,
+        int32_t i) {
+    if (runtime == nullptr || runtime->ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage get_embeddings_ith requires a runtime created by obit_llama_stage_init_from_model");
+        return nullptr;
+    }
+    return llama_get_embeddings_ith(runtime->ctx, i);
+}
+
+bool obit_llama_stage_clear_sequence(
+        struct obit_llama_stage_runtime * runtime,
+        int32_t seq_id,
+        int32_t p0,
+        int32_t p1) {
+    if (runtime == nullptr || runtime->ctx == nullptr) {
+        obit_llama_stage_set_error(
+                "obit libllama stage clear_sequence requires a runtime created by obit_llama_stage_init_from_model");
+        return false;
+    }
+    llama_memory_t mem = llama_get_memory(runtime->ctx);
+    if (mem == nullptr) {
+        obit_llama_stage_set_error("obit libllama stage clear_sequence: llama_context has no memory");
+        return false;
+    }
+    obit_llama_stage_set_error("");
+    return llama_memory_seq_rm(mem, seq_id, p0, p1);
 }
 
 const char * obit_llama_stage_last_error(void) {
