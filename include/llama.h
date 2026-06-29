@@ -1576,6 +1576,27 @@ extern "C" {
     LLAMA_API void obit_llama_stage_free(struct obit_llama_stage_runtime * runtime);
     LLAMA_API const char * obit_llama_stage_last_error(void);
 
+    // Stage execution: thin wrappers around the underlying llama_context. The
+    // per-stage GGUF that gguf_stage_split produces is a self-contained model
+    // covering [layer_start, layer_end); calling llama_decode on its context
+    // gives the boundary tensor (hidden state for non-last stages with
+    // emit_logits=false; logits for last stages). The runtime configures
+    // `embeddings = !emit_logits` at init so the right kind comes out.
+    LLAMA_API int32_t obit_llama_stage_decode(
+            struct obit_llama_stage_runtime * runtime,
+            struct llama_batch batch);
+    LLAMA_API float * obit_llama_stage_get_logits_ith(
+            struct obit_llama_stage_runtime * runtime,
+            int32_t i);
+    LLAMA_API float * obit_llama_stage_get_embeddings_ith(
+            struct obit_llama_stage_runtime * runtime,
+            int32_t i);
+    LLAMA_API bool obit_llama_stage_clear_sequence(
+            struct obit_llama_stage_runtime * runtime,
+            int32_t seq_id,
+            int32_t p0,
+            int32_t p1);
+
     // Set callback for all future logging events.
     // If this is not called, or NULL is supplied, everything is output on stderr.
     // The logger state is global so these functions are NOT thread safe.
