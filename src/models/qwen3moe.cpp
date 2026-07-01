@@ -65,6 +65,12 @@ llama_model_qwen3moe::graph::graph(const llama_model & model, const llm_graph_pa
     GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
     GGML_ASSERT(n_embd_head == n_rot);
 
+    // Obit fork: stage-aware loop bounds + emit_logits gating. See
+    // llm_graph_context::get_stage_bounds + build_stage_output_or_boundary
+    // in llama-graph.cpp. When the stage is inactive (the upstream case)
+    // these collapse to [0, n_layer) + emit_logits=true.
+    const llm_stage_bounds stage = get_stage_bounds();
+
     ggml_tensor * cur;
     ggml_tensor * inpL;
 
@@ -75,9 +81,9 @@ llama_model_qwen3moe::graph::graph(const llama_model & model, const llm_graph_pa
 
     auto * inp_attn = build_attn_inp_kv();
 
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    ggml_tensor * inp_out_ids = stage.emit_logits ? build_inp_out_ids() : nullptr;
 
-    for (int il = 0; il < n_layer; ++il) {
+    for (uint32_t il = stage.layer_start; il < stage.layer_end; ++il) {
         ggml_tensor * inpSA = inpL;
 
         // norm
@@ -118,7 +124,7 @@ llama_model_qwen3moe::graph::graph(const llama_model & model, const llm_graph_pa
                     model.layers[il].wo, model.layers[il].wo_b, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
         }
-        if (il == n_layer - 1 && inp_out_ids) {
+        if (il + 1 == stage.layer_end && inp_out_ids) {
             cur   = ggml_get_rows(ctx0,   cur, inp_out_ids);
             inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
         }
@@ -160,18 +166,8 @@ llama_model_qwen3moe::graph::graph(const llama_model & model, const llm_graph_pa
     }
     cur = inpL;
 
-    cur = build_norm(cur,
-            model.output_norm, NULL,
-            LLM_NORM_RMS, -1);
-
-    cb(cur, "result_norm", -1);
-    res->t_embd = cur;
-
-    // lm_head
-    cur = build_lora_mm(model.output, cur, model.output_s);
-
-    cb(cur, "result_output", -1);
-    res->t_logits = cur;
-
-    ggml_build_forward_expand(gf, cur);
+    // Obit fork: either runs output_norm + lm_head (the upstream / last-
+    // stage case) or emits the post-loop hidden state as the boundary
+    // tensor. Stores res->t_embd / res->t_logits and finalizes the graph.
+    build_stage_output_or_boundary(cur, model.output_norm, model.output, model.output_s, LLM_NORM_RMS);
 }
