@@ -165,6 +165,13 @@ llama_model_qwen35moe::graph::graph(const llama_model & model, const llm_graph_p
     int sections[4];
     std::copy(std::begin(hparams.rope_sections), std::begin(hparams.rope_sections) + 4, sections);
 
+    // Obit fork: stage-aware loop bounds + emit_logits gating. See
+    // llm_graph_context::get_stage_bounds + build_stage_output_or_boundary
+    // in llama-graph.cpp. When the stage is inactive (the upstream case)
+    // these collapse to [0, n_layer) + emit_logits=true so the loop body
+    // and terminal block match the pre-obit behavior exactly.
+    const llm_stage_bounds stage = get_stage_bounds();
+
     ggml_tensor * cur;
     ggml_tensor * inpL;
 
@@ -175,10 +182,10 @@ llama_model_qwen35moe::graph::graph(const llama_model & model, const llm_graph_p
     auto * inp = build_inp_mem_hybrid();
 
     ggml_tensor * inp_pos     = build_inp_pos();
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    ggml_tensor * inp_out_ids = stage.emit_logits ? build_inp_out_ids() : nullptr;
 
     // MTP/NextN layers are loaded as extra decoder blocks but not executed in the main pass.
-    for (int il = 0; il < n_layer; ++il) {
+    for (uint32_t il = stage.layer_start; il < stage.layer_end; ++il) {
         ggml_tensor * inpSA = inpL;
 
         cur = build_norm(inpL, model.layers[il].attn_norm, nullptr, LLM_NORM_RMS, il);
@@ -195,7 +202,7 @@ llama_model_qwen35moe::graph::graph(const llama_model & model, const llm_graph_p
             cur = build_layer_attn(inp->get_attn(), cur, inp_pos, sections, il);
         }
 
-        if (il == n_layer - 1 && inp_out_ids && cparams.embeddings_nextn_masked) {
+        if (il + 1 == stage.layer_end && inp_out_ids && cparams.embeddings_nextn_masked) {
             cur   = ggml_get_rows(ctx0, cur, inp_out_ids);
             inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
         }
@@ -226,6 +233,18 @@ llama_model_qwen35moe::graph::graph(const llama_model & model, const llm_graph_p
         inpL = cur;
     }
     cur = inpL;
+
+    // Obit fork: non-last stage emits the post-loop hidden state as the
+    // boundary tensor. The last stage (and every upstream / non-stage
+    // caller) runs the standard terminal block below: output_norm, save
+    // as t_h_nextn (for MTP seeding), conditional get_rows depending on
+    // cparams.embeddings_nextn_masked, then the LM head.
+    if (stage.active && !stage.emit_logits) {
+        cb(cur, "result_stage_hidden", -1);
+        res->t_embd = cur;
+        ggml_build_forward_expand(gf, cur);
+        return;
+    }
 
     // post-norm hidden state feeds both the LM head and the MTP seed below
     cur = build_norm(cur, model.output_norm, nullptr, LLM_NORM_RMS, -1);
