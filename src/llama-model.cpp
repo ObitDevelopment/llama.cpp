@@ -2224,13 +2224,26 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
 }
 
 ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
+    fprintf(stderr, "[obit-bg-debug] build_graph enter arch=%d gtype=%d n_tokens=%u this=%p vptr=%p\n",
+            (int)params.arch, (int)params.gtype, params.ubatch.n_tokens,
+            (const void*)this, *(void**)this);
+    fflush(stderr);
+
     std::unique_ptr<llm_graph_context> llm = build_arch_graph(params);
+
+    fprintf(stderr, "[obit-bg-debug] after build_arch_graph llm=%p llm_vptr=%p\n",
+            (void*)llm.get(), llm.get() ? *(void**)llm.get() : nullptr);
+    fflush(stderr);
 
     // add on pooling layer
     llm->build_pooling(cls, cls_b, cls_out, cls_out_b, cls_norm);
 
+    fprintf(stderr, "[obit-bg-debug] after build_pooling\n"); fflush(stderr);
+
     // add backend sampling layers (if any)
     llm->build_sampling();
+
+    fprintf(stderr, "[obit-bg-debug] after build_sampling\n"); fflush(stderr);
 
     // if the gguf model was converted with --sentence-transformers-dense-modules
     // there will be two additional dense projection layers
@@ -2238,7 +2251,11 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
     // TODO: move reranking logic here and generalize
     llm->build_dense_out(dense_2_out_layers, dense_2_out_layers_b, dense_3_out_layers);
 
+    fprintf(stderr, "[obit-bg-debug] after build_dense_out\n"); fflush(stderr);
+
     llm->res->set_outputs();
+
+    fprintf(stderr, "[obit-bg-debug] after set_outputs, returning gf\n"); fflush(stderr);
 
     return llm->res->get_gf();
 }
