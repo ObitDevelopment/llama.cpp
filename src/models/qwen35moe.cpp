@@ -158,10 +158,6 @@ std::unique_ptr<llm_graph_context> llama_model_qwen35moe::build_arch_graph(const
 
 llama_model_qwen35moe::graph::graph(const llama_model & model, const llm_graph_params & params) :
     llm_build_delta_net_base(params), model(model) {
-    fprintf(stderr, "[obit-qwen35moe-debug] graph ctor enter n_tokens=%u this=%p vptr=%p\n",
-            params.ubatch.n_tokens, (const void*)this, *(void**)this);
-    fflush(stderr);
-
     const int64_t n_embd_head = hparams.n_embd_head_v();
 
     GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
@@ -187,10 +183,6 @@ llama_model_qwen35moe::graph::graph(const llama_model & model, const llm_graph_p
 
     ggml_tensor * inp_pos     = build_inp_pos();
     ggml_tensor * inp_out_ids = stage.emit_logits ? build_inp_out_ids() : nullptr;
-
-    fprintf(stderr, "[obit-qwen35moe-debug] entering layer loop il=%u..%u stage.active=%d emit_logits=%d\n",
-            stage.layer_start, stage.layer_end, (int)stage.active, (int)stage.emit_logits);
-    fflush(stderr);
 
     // MTP/NextN layers are loaded as extra decoder blocks but not executed in the main pass.
     for (uint32_t il = stage.layer_start; il < stage.layer_end; ++il) {
@@ -247,23 +239,14 @@ llama_model_qwen35moe::graph::graph(const llama_model & model, const llm_graph_p
     // caller) runs the standard terminal block below: output_norm, save
     // as t_h_nextn (for MTP seeding), conditional get_rows depending on
     // cparams.embeddings_nextn_masked, then the LM head.
-    fprintf(stderr, "[obit-qwen35moe-debug] loop done, entering terminal path (emit_logits=%d)\n",
-            (int)stage.emit_logits);
-    fflush(stderr);
-
     if (stage.active && !stage.emit_logits) {
         cb(cur, "result_stage_hidden", -1);
         res->t_embd = cur;
         ggml_build_forward_expand(gf, cur);
-        fprintf(stderr, "[obit-qwen35moe-debug] stage-boundary path done\n"); fflush(stderr);
         return;
     }
 
     // post-norm hidden state feeds both the LM head and the MTP seed below
-    fprintf(stderr, "[obit-qwen35moe-debug] before output_norm, output_norm=%p output=%p inp_out_ids=%p embeddings_nextn_masked=%d\n",
-            (void*)model.output_norm, (void*)model.output, (void*)inp_out_ids,
-            (int)cparams.embeddings_nextn_masked);
-    fflush(stderr);
     cur = build_norm(cur, model.output_norm, nullptr, LLM_NORM_RMS, -1);
 
     cb(cur, "h_nextn", -1);
@@ -283,7 +266,6 @@ llama_model_qwen35moe::graph::graph(const llama_model & model, const llm_graph_p
     res->t_logits = cur;
 
     ggml_build_forward_expand(gf, cur);
-    fprintf(stderr, "[obit-qwen35moe-debug] terminal path done\n"); fflush(stderr);
 }
 
 std::pair<ggml_tensor *, ggml_tensor *> llama_model_qwen35moe::graph::build_qkvz(
