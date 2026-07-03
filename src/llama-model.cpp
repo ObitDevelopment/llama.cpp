@@ -1006,6 +1006,9 @@ llama_model::llama_model(const llama_model_params & params) : params(params), pi
 }
 
 llama_model::~llama_model() {
+    fprintf(stderr, "[obit-lifecycle-debug] ~llama_model() this=%p arch=%d\n",
+            (const void*)this, (int)arch);
+    fflush(stderr);
     for (auto * lora : loras) {
         delete lora;
     }

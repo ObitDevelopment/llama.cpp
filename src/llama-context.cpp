@@ -432,6 +432,10 @@ llama_context::~llama_context() {
 }
 
 void llama_context::sched_reserve() {
+    fprintf(stderr, "[obit-lifecycle-debug] sched_reserve enter ctx=%p model=%p model_vptr=%p sched_need_reserve=%d obit_stage_active=%d\n",
+            (const void*)this, (const void*)&model, *(void**)&model,
+            (int)sched_need_reserve, (int)cparams.obit_stage_active);
+    fflush(stderr);
     if (!sched_need_reserve) {
         return;
     }
@@ -1288,6 +1292,10 @@ bool llama_context::set_adapter_cvec(
 }
 
 llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, llm_graph_type gtype, llama_memory_context_i * mctx, ggml_status & ret) {
+    fprintf(stderr, "[obit-lifecycle-debug] process_ubatch enter ctx=%p model=%p model_vptr=%p n_tokens=%u obit_stage_active=%d\n",
+            (const void*)this, (const void*)&model, *(void**)&model,
+            ubatch.n_tokens, (int)cparams.obit_stage_active);
+    fflush(stderr);
     if (mctx && !mctx->apply()) {
         LLAMA_LOG_ERROR("%s: failed to apply memory context\n", __func__);
         ret = GGML_STATUS_FAILED;
@@ -3416,6 +3424,9 @@ llama_context_params llama_context_default_params() {
 llama_context * llama_init_from_model(
                  llama_model * model,
         llama_context_params   params) {
+    fprintf(stderr, "[obit-lifecycle-debug] llama_init_from_model: model=%p model_vptr=%p\n",
+            (const void*)model, model ? *(void**)model : nullptr);
+    fflush(stderr);
     if (!model) {
         LLAMA_LOG_ERROR("%s: model cannot be NULL\n", __func__);
         return nullptr;
