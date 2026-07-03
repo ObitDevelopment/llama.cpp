@@ -11,7 +11,6 @@
 #include "ggml.h"
 
 #include <cstdint>
-#include <cstdio>
 #include <string>
 #include <utility>
 
@@ -183,15 +182,6 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
         struct llama_model * model,
         struct llama_context_params context_params,
         struct obit_llama_stage_params stage_params) {
-    // Debug: log the received stage_params so we can diagnose ABI drift
-    // between Rust FFI and this C++ side. Remove after diagnosing the
-    // 2026-07-02 Qwen3.6-35B-A3B DPI smoke layer_end/n_layer mismatch.
-    fprintf(stderr,
-            "[obit-stage-debug] init_from_model: stage_index=%u total_stages=%u "
-            "layer_start=%u layer_end=%u emit_logits=%d\n",
-            stage_params.stage_index, stage_params.total_stages,
-            stage_params.layer_start, stage_params.layer_end,
-            (int)stage_params.emit_logits);
     if (obit_llama_stage_validate_params(stage_params) != 0) {
         return nullptr;
     }
@@ -203,9 +193,6 @@ struct obit_llama_stage_runtime * obit_llama_stage_init_from_model(
     if (obit_llama_stage_get_model_info(model, &model_info) != 0) {
         return nullptr;
     }
-    fprintf(stderr,
-            "[obit-stage-debug] init_from_model: model_info.n_layer=%u n_embd=%u\n",
-            model_info.n_layer, model_info.n_embd);
     if (stage_params.layer_end > model_info.n_layer) {
         obit_llama_stage_set_error(
                 "obit libllama stage params require layer_end <= model layer count");
