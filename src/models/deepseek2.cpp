@@ -145,6 +145,16 @@ std::unique_ptr<llm_graph_context> llama_model_deepseek2::build_arch_graph(const
 
 llama_model_deepseek2::graph::graph(const llama_model & model, const llm_graph_params & params) :
     llm_graph_context(params) {
+    // Obit fork: stage-aware loop bounds + emit_logits gating. See
+    // llm_graph_context::get_stage_bounds + build_stage_output_or_boundary
+    // in llama-graph.cpp. When the stage is inactive (the upstream case)
+    // these collapse to [0, n_layer) + emit_logits=true so the loop body
+    // and terminal block match the pre-obit behavior exactly. Since
+    // LLM_ARCH_GLM_DSA and LLM_ARCH_GLM4_MOE reuse this graph via
+    // `using graph = llama_model_deepseek2::graph;`, teaching this one
+    // class stage-awareness is what unlocks GLM 4.5-Air / GLM 5.2 DPI.
+    const llm_stage_bounds stage = get_stage_bounds();
+
     // lite variants include DeepSeek-V2-Lite, GigaChat3-10B-A1.8B
     bool is_ocr = model.arch == LLM_ARCH_DEEPSEEK2OCR;
 
@@ -189,9 +199,9 @@ llama_model_deepseek2::graph::graph(const llama_model & model, const llm_graph_p
     auto * inp_attn_kv = !is_mla ? build_attn_inp_kv() : nullptr;
     auto * inp_attn_k  =  is_mla ? build_attn_inp_k()  : nullptr;
 
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    ggml_tensor * inp_out_ids = stage.emit_logits ? build_inp_out_ids() : nullptr;
 
-    for (int il = 0; il < n_layer; ++il) {
+    for (int il = (int) stage.layer_start; il < (int) stage.layer_end; ++il) {
         ggml_tensor * inpSA = inpL;
 
         // norm
@@ -365,7 +375,7 @@ llama_model_deepseek2::graph::graph(const llama_model & model, const llm_graph_p
                             Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, kq_scale, il);
             }
         }
-        if (il == n_layer - 1 && inp_out_ids) {
+        if (il + 1 == (int) stage.layer_end && inp_out_ids) {
             cur   = ggml_get_rows(ctx0, cur, inp_out_ids);
             inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
         }
@@ -423,16 +433,11 @@ llama_model_deepseek2::graph::graph(const llama_model & model, const llm_graph_p
     }
     cur = inpL;
 
-    cur = build_norm(cur, model.output_norm, NULL, LLM_NORM_RMS, -1);
-
-    cb(cur, "result_norm", -1);
-    res->t_embd = cur;
-
-    // lm_head
-    cur = ggml_mul_mat(ctx0, model.output, cur);
-
-    cb(cur, "result_output", -1);
-    res->t_logits = cur;
-
-    ggml_build_forward_expand(gf, cur);
+    // Obit fork: either runs output_norm + lm_head (the upstream / last-
+    // stage case) or emits the post-loop hidden state as the boundary
+    // tensor. Stores res->t_embd / res->t_logits and finalizes the graph.
+    // build_lora_mm degenerates to ggml_mul_mat when no LoRA adapters are
+    // attached, so this is behavior-equivalent to the pre-obit
+    // `ggml_mul_mat(ctx0, model.output, cur)` for vanilla inference.
+    build_stage_output_or_boundary(cur, model.output_norm, model.output, nullptr, LLM_NORM_RMS);
 }
