@@ -289,6 +289,16 @@ llama_model_glm4_moe::graph_mtp::graph_mtp(const llama_model & model, const llm_
 }
 
 llama_model_glm4_moe::graph::graph(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    // Obit fork: stage-aware loop bounds + emit_logits gating + multimodal-abort
+    // gating for DPI. See llm_graph_context::get_stage_bounds and
+    // build_stage_output_or_boundary in llama-graph.cpp. When the stage is
+    // inactive (the upstream / single-node case) stage bounds collapse to
+    // [0, n_layer) + emit_logits=true so the loop body and terminal block
+    // match the pre-obit behavior. LLM_ARCH_GLM4_MOE has its OWN graph class
+    // (models.h:1129) so the deepseek2 stage-awareness edits do not apply
+    // here — this is a parallel edit.
+    const llm_stage_bounds stage = get_stage_bounds();
+
     const int64_t n_embd_head = hparams.n_embd_head_v();
 
     GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
@@ -302,7 +312,13 @@ llama_model_glm4_moe::graph::graph(const llama_model & model, const llm_graph_pa
     inpL = build_inp_embd(model.tok_embd);
 
     bool use_mrope = hparams.use_mrope();
-    if (ubatch.embd && !use_mrope) {
+    // Obit fork: for DPI stages > 0 the pipeline feeds `ubatch.embd` with the
+    // preceding stage's hidden output — that is the WHOLE POINT of DPI, and
+    // the upstream multimodal guard here would otherwise abort the run.
+    // Skip the guard when the stage is active; keep it for upstream / single-
+    // node inference where `ubatch.embd` really would signal a bad multimodal
+    // GGUF.
+    if (!stage.active && ubatch.embd && !use_mrope) {
         // unfortunately, we need to forcefully stop here, to avoid users complaining about wrong results
         GGML_ABORT("This GGUF does not support multimodal. Please reconvert it.");
     }
@@ -312,10 +328,10 @@ llama_model_glm4_moe::graph::graph(const llama_model & model, const llm_graph_pa
 
     auto * inp_attn = build_attn_inp_kv();
 
-    ggml_tensor * inp_out_ids = build_inp_out_ids();
+    ggml_tensor * inp_out_ids = stage.emit_logits ? build_inp_out_ids() : nullptr;
 
     // NextN layers are processed by graph_mtp.
-    for (int il = 0; il < n_layer; ++il) {
+    for (int il = (int) stage.layer_start; il < (int) stage.layer_end; ++il) {
         ggml_tensor * inpSA = inpL;
 
         // Pre-attention norm
@@ -364,7 +380,9 @@ llama_model_glm4_moe::graph::graph(const llama_model & model, const llm_graph_pa
                     model.layers[il].wo, NULL, model.layers[il].wo_s,
                     Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, 1.0f/sqrtf(float(n_embd_head)), il);
         }
-        if (il == n_layer - 1 && inp_out_ids && (!cparams.embeddings_nextn || cparams.embeddings_nextn_masked)) {
+        // Obit fork: stage-aware last-layer check; upstream's NextN/MTP
+        // masking condition is preserved on top of the stage bound.
+        if (il + 1 == (int) stage.layer_end && inp_out_ids && (!cparams.embeddings_nextn || cparams.embeddings_nextn_masked)) {
             cur   = ggml_get_rows(ctx0, cur, inp_out_ids);
             inpSA = ggml_get_rows(ctx0, inpSA, inp_out_ids);
         }
@@ -422,6 +440,25 @@ llama_model_glm4_moe::graph::graph(const llama_model & model, const llm_graph_pa
         inpL = cur;
     }
     cur = inpL;
+
+    // Obit fork: non-last stage emits the post-loop hidden state as the
+    // boundary tensor. The last stage (and every upstream / non-stage
+    // caller) runs upstream's standard terminal block below unchanged:
+    // output_norm, save as t_h_nextn (for MTP/NextN seeding), conditional
+    // get_rows depending on cparams.embeddings_nextn*, then the LM head.
+    // (This used to call build_stage_output_or_boundary; upstream's NextN
+    // additions to this terminal block no longer fit the generic helper,
+    // so the stage boundary is an explicit early-return now — the
+    // qwen35moe pattern. NOTE: the `cur = build_norm(...)` line below is
+    // upstream's — our old helper-call diff had deleted it, so a naive
+    // conflict resolution loses the final output_norm silently.)
+    if (stage.active && !stage.emit_logits) {
+        cb(cur, "result_stage_hidden", -1);
+        res->t_embd = cur;
+        ggml_build_forward_expand(gf, cur);
+        return;
+    }
+
     cur = build_norm(cur, model.output_norm, NULL, LLM_NORM_RMS, -1);
 
     cb(cur, "h_nextn", -1);
