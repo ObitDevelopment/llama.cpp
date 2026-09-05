@@ -75,6 +75,8 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
     ggml_tensor * inp_out_ids = stage.emit_logits ? build_inp_out_ids() : nullptr;
 
     for (uint32_t il = stage.layer_start; il < stage.layer_end; ++il) {
+        res->t_layer_inp[il] = inpL;
+
         ggml_tensor * inpSA = inpL;
 
         // norm
