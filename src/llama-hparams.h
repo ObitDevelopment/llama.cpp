@@ -206,6 +206,12 @@ struct llama_hparams {
     float    situ_beta            = 1.0f;
     float    situ_linear_beta     = 0.0f;   // 0 = no linear-beta transform on the up branch
 
+    // hrm-text (looped H/L stacks)
+    uint32_t n_hrm_layers_per_stack = 0;
+    uint32_t n_hrm_h_cycles = 0;
+    uint32_t n_hrm_l_cycles = 0;
+    bool     hrm_prefix_lm = false;
+
     bool ssm_dt_b_c_rms = false;
 
     float f_clamp_kqv      = 0.0f;
@@ -296,6 +302,9 @@ struct llama_hparams {
 
     // 0 = full rank (DeepSeek-V4)
     uint32_t hc_low_rank = 0;
+
+    // scale of the hyper-connection post gate (DeepSeek-V4 hardcodes 2.0)
+    float    hc_magnitude = 0.0f;
 
     uint32_t ple_ngram_size      = 0;
     uint32_t ple_heads_per_ngram = 0;
