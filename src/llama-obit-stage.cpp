@@ -19,7 +19,7 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
-    return "obit-llama abi=1 stage_abi=2 stage_flags=3 boundary_info=1 single_stage=1 layer_range=qwen3+qwen3moe+qwen35moe+deepseek2+deepseek2ocr+glm4moe+glmdsa clear_seq=1";
+    return "obit-llama abi=1 stage_abi=2 stage_flags=3 boundary_info=1 single_stage=1 layer_range=qwen3+qwen3moe+qwen35moe+deepseek2+deepseek2ocr+glm4moe clear_seq=1";
 }
 
 uint32_t obit_llama_stage_abi_version(void) {
@@ -35,23 +35,26 @@ uint64_t obit_llama_stage_capability_flags(void) {
 }
 
 const char * obit_llama_stage_unsupported_reason(void) {
-    return "obit libllama stage execution hooks support qwen3, qwen3moe, qwen35moe, deepseek2, deepseek2ocr, glm4moe, and glm-dsa architectures today; other architectures fail closed before StageReady";
+    return "obit libllama stage execution hooks support qwen3, qwen3moe, qwen35moe, deepseek2, deepseek2ocr, and glm4moe architectures today; other architectures fail closed before StageReady";
 }
 
 static bool obit_llama_arch_supports_layer_range(llm_arch arch) {
     // Expand as additional per-arch graph builders are taught to honor
     // cparams.obit_stage_* bounds via get_stage_bounds() +
-    // build_stage_output_or_boundary(). DeepSeek2, GLM4-MoE, and GLM-DSA
-    // all share llama_model_deepseek2::graph via `using graph = ...`,
-    // so teaching that one class stage-awareness (see deepseek2.cpp)
-    // covers all three archs at once.
+    // build_stage_output_or_boundary(). DeepSeek2 and GLM4-MoE have their
+    // own stage-bounded graphs in deepseek2.cpp and glm4-moe.cpp.
+    //
+    // GLM-DSA is not here (#2724): glm-dsa.cpp has its own graph that loops
+    // over 0..n_layer and never reads the stage bounds, so a staged run
+    // would silently execute every layer in every stage. Restore it once
+    // that graph has the stage-bounded loop and early return the other two
+    // archs use.
     return arch == LLM_ARCH_QWEN3
         || arch == LLM_ARCH_QWEN3MOE
         || arch == LLM_ARCH_QWEN35MOE
         || arch == LLM_ARCH_DEEPSEEK2
         || arch == LLM_ARCH_DEEPSEEK2OCR
-        || arch == LLM_ARCH_GLM4_MOE
-        || arch == LLM_ARCH_GLM_DSA;
+        || arch == LLM_ARCH_GLM4_MOE;
 }
 
 struct obit_llama_stage_runtime {
