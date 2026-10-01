@@ -52,6 +52,10 @@ add_library(llama
             # upstream's LLAMA_CORE_SOURCES.
             ../include/llama-obit-stage.h
             llama-obit-stage.cpp
+            # Obit fork: MTP speculative shim header. The implementation is
+            # added by the LLAMA_OBIT_SPEC block below, which also pulls in the
+            # `common` sources it needs.
+            ../include/llama-obit-spec.h
             ${LLAMA_CORE_SOURCES}
             unicode.h
             ${LLAMA_MODELS_SOURCES}
@@ -73,6 +77,63 @@ set_source_files_properties(${LLAMA_CORE_SOURCES} ../include/llama.h unicode.h
 # excluded from the unity build for the same reason upstream excludes the rest.
 set_source_files_properties(llama-obit-stage.cpp ../include/llama-obit-stage.h
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
+# Obit fork: the MTP speculative shim wraps common_speculative. libllama does
+# not link the `common` library today, so with LLAMA_OBIT_SPEC=ON we compile
+# the shim plus the smallest closure of `common` sources it needs straight into
+# libllama. The common translation units are built with hidden visibility so
+# the only new dynamic exports are obit_spec_mtp_* / obit_llama_spec_abi_version.
+if (LLAMA_OBIT_SPEC)
+    # common.cpp reads llama_build_number()/_commit()/etc from the generated
+    # build-info TU. common/CMakeLists generates it only when the common library
+    # is built, but the Obit recipe sets LLAMA_BUILD_COMMON=OFF, so generate our
+    # own copy here.
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/build-info.cpp.in
+        ${CMAKE_CURRENT_BINARY_DIR}/obit-spec-build-info.cpp @ONLY)
+
+    set(OBIT_SPEC_SOURCES
+        llama-obit-spec.cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/obit-spec-build-info.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/speculative.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/common.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/log.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/json.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/sampling.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/ngram-cache.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/ngram-map.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/ngram-mod.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/fit.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/unicode.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/reasoning-budget.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/trie.cpp
+    )
+
+    target_sources(llama PRIVATE ${OBIT_SPEC_SOURCES} ../include/llama-obit-spec.h)
+    target_compile_definitions(llama PRIVATE LLAMA_OBIT_SPEC=1)
+    target_include_directories(llama PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../common)
+
+    set_source_files_properties(${OBIT_SPEC_SOURCES} PROPERTIES
+        SKIP_UNITY_BUILD_INCLUSION ON)
+
+    if (NOT MSVC)
+        set_source_files_properties(
+            ${CMAKE_CURRENT_BINARY_DIR}/obit-spec-build-info.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/speculative.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/common.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/log.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/json.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/sampling.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/ngram-cache.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/ngram-map.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/ngram-mod.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/fit.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/unicode.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/reasoning-budget.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/../common/trie.cpp
+            PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden")
+    endif()
+endif()
 
 configure_file(llama-version.h.in ${CMAKE_CURRENT_BINARY_DIR}/llama-version.h @ONLY)
 

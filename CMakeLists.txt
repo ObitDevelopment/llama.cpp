@@ -132,6 +132,11 @@ option(LLAMA_BUILD_COMMON "llama: build common utils library" ${LLAMA_STANDALONE
 option(LLAMA_BUILD_TESTS     "llama: build tests"                                                                ${LLAMA_STANDALONE})
 option(LLAMA_BUILD_TOOLS     "llama: build tools"                                                                ${LLAMA_STANDALONE})
 option(LLAMA_BUILD_EXAMPLES  "llama: build examples"                                                             ${LLAMA_STANDALONE})
+
+# Obit fork: build the MTP speculative shim (obit_spec_mtp_*) into libllama.
+# OFF upstream-style; Obit build scripts pass -DLLAMA_OBIT_SPEC=ON. See
+# src/CMakeLists.txt for the common sources this pulls in.
+option(LLAMA_OBIT_SPEC "llama: build the Obit MTP speculative shim into libllama" OFF)
 option(LLAMA_BUILD_SERVER    "llama: build server example"                                                       ${LLAMA_STANDALONE})
 option(LLAMA_BUILD_APP       "llama: build the unified binary"                                                   ${LLAMA_STANDALONE})
 option(LLAMA_BUILD_UI        "llama: build the embedded Web UI for server"                                       OFF)
@@ -243,6 +248,17 @@ endif()
 if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TESTS AND NOT CMAKE_JS_VERSION)
     include(CTest)
     add_subdirectory(tests)
+endif()
+
+# Obit fork: MTP speculative shim smoke test. Defined here, not in
+# tests/CMakeLists.txt, so it builds with LLAMA_BUILD_COMMON and
+# LLAMA_BUILD_TESTS off (the Obit CPU recipe sets both off) and stays out of
+# upstream's test list.
+if (LLAMA_OBIT_SPEC AND NOT CMAKE_JS_VERSION)
+    include(CTest)
+    add_executable(obit-spec-mtp-smoke tests/obit-spec-mtp-smoke.c)
+    target_link_libraries(obit-spec-mtp-smoke PRIVATE llama)
+    add_test(NAME obit-spec-mtp-smoke COMMAND obit-spec-mtp-smoke)
 endif()
 
 if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_EXAMPLES)

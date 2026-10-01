@@ -1739,4 +1739,7 @@ extern "C" {
 // may also `#include "llama-obit-stage.h"` directly.
 #include "llama-obit-stage.h"
 
+// Obit fork: MTP speculative shim ABI, same rationale as the stage header.
+#include "llama-obit-spec.h"
+
 #endif // LLAMA_H

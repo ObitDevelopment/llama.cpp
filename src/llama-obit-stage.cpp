@@ -19,7 +19,13 @@ uint32_t obit_llama_abi_version(void) {
 }
 
 const char * obit_llama_build_info(void) {
+    // spec_mtp=1 is advertised only when the MTP shim was compiled in
+    // (-DLLAMA_OBIT_SPEC=ON); a default build must not claim exports it lacks.
+#ifdef LLAMA_OBIT_SPEC
+    return "obit-llama abi=1 stage_abi=2 stage_flags=3 boundary_info=1 single_stage=1 layer_range=qwen3+qwen3moe+qwen35moe+deepseek2+deepseek2ocr+glm4moe clear_seq=1 spec_mtp=1";
+#else
     return "obit-llama abi=1 stage_abi=2 stage_flags=3 boundary_info=1 single_stage=1 layer_range=qwen3+qwen3moe+qwen35moe+deepseek2+deepseek2ocr+glm4moe clear_seq=1";
+#endif
 }
 
 uint32_t obit_llama_stage_abi_version(void) {
