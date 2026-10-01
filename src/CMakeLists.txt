@@ -112,6 +112,11 @@ if (LLAMA_OBIT_SPEC)
     target_sources(llama PRIVATE ${OBIT_SPEC_SOURCES} ../include/llama-obit-spec.h)
     target_compile_definitions(llama PRIVATE LLAMA_OBIT_SPEC=1)
     target_include_directories(llama PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../common)
+    # common/json.cpp includes <nlohmann/json.hpp> from the vendored copy under
+    # vendor/, the same header-only interface target common/ itself links. A
+    # host with a system nlohmann header hides a missing include path, a CI box
+    # without one does not (ObitDevelopment/cc #2751, run 36831427261).
+    target_link_libraries(llama PRIVATE vendor::nlohmann)
 
     set_source_files_properties(${OBIT_SPEC_SOURCES} PROPERTIES
         SKIP_UNITY_BUILD_INCLUSION ON)
