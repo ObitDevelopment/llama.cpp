@@ -25,6 +25,9 @@ struct obit_spec_mtp_seq {
 
 struct obit_spec_mtp {
     common_speculative * spec = nullptr;
+    llama_context * ctx_tgt = nullptr;
+    // reusable mirror of the caller's llama_batch, see obit_spec_mtp_process
+    common_batch batch;
     uint32_t n_seq = 0;
     int32_t  n_max = 0;
     std::vector<obit_spec_mtp_seq> seqs;
@@ -102,7 +105,9 @@ int32_t obit_spec_mtp_init(
         return -ENOMEM;
     }
 
-    handle->spec  = spec;
+    handle->spec    = spec;
+    handle->ctx_tgt = ctx_tgt;
+    handle->batch   = common_batch(ctx_tgt);
     handle->n_seq = n_seq;
     handle->n_max = n_max;
     handle->seqs.resize(n_seq);
@@ -155,7 +160,40 @@ int32_t obit_spec_mtp_process(
         return -EINVAL;
     }
 
-    const bool ingested = common_speculative_process(spec->spec, *batch);
+    // Upstream #29385 moved common_speculative_process() from llama_batch to
+    // common_batch (the llama_batch_ext wrapper). The shim's public ABI keeps
+    // taking the same llama_batch the caller just handed llama_decode(), so
+    // mirror it entry by entry. The MTP impl reads only id / pos / seq_id /
+    // embd from it; embd views point into the caller's batch, which outlives
+    // this call.
+    common_batch & cb = spec->batch;
+    cb.clear();
+    const int32_t n_embd = llama_model_n_embd_inp(llama_get_model(spec->ctx_tgt));
+    for (int32_t i = 0; i < batch->n_tokens; ++i) {
+        const llama_seq_id seq0  = batch->seq_id ? batch->seq_id[i][0] : 0;
+        const bool         out_i = batch->logits ? batch->logits[i] != 0 : (i == batch->n_tokens - 1);
+        const llama_pos    pos0  = batch->pos ? batch->pos[i] : 0;
+        int32_t idx;
+        if (batch->token) {
+            idx = cb.add(batch->token[i], pos0, seq0, out_i);
+        } else if (batch->embd) {
+            // llama_batch keeps M-RoPE positions section-major: pos[i + s*n_tokens]
+            llama_pos pos_i[GGML_MROPE_SECTIONS] = {};
+            for (int32_t j = 0; j < cb.n_pos; ++j) {
+                pos_i[j] = batch->pos ? batch->pos[i + j * batch->n_tokens] : 0;
+            }
+            idx = cb.add_embd({ batch->embd + (size_t) i * n_embd, 1, (size_t) n_embd }, pos_i, seq0, out_i);
+        } else {
+            break;
+        }
+        if (batch->seq_id && batch->n_seq_id) {
+            for (int32_t s = 1; s < batch->n_seq_id[i]; ++s) {
+                cb.add_seq(idx, batch->seq_id[i][s]);
+            }
+        }
+    }
+
+    const bool ingested = common_speculative_process(spec->spec, cb);
     if (!ingested) {
         obit_spec_mtp_set_error("common_speculative_process failed; see the log for the draft decode error");
         return -EIO;

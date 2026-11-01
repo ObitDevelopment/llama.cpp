@@ -170,6 +170,7 @@ llama_model_qwen3moe::graph::graph(const llama_model & model, const llm_graph_pa
 
     // Obit fork: either runs output_norm + lm_head (the upstream / last-
     // stage case) or emits the post-loop hidden state as the boundary
-    // tensor. Stores res->t_embd / res->t_logits and finalizes the graph.
+    // tensor. Stores res->t_embd / res->t_logits; the LM head is expanded
+    // later by llm_graph_context::build_logits().
     build_stage_output_or_boundary(cur, model.output_norm, model.output, model.output_s, LLM_NORM_RMS);
 }

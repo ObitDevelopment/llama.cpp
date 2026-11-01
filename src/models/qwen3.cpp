@@ -28,6 +28,10 @@ void llama_model_qwen3::load_arch_tensors(llama_model_loader &) {
     // output rerank head
     cls_out = create_tensor(tn(LLM_TENSOR_CLS_OUT, "weight"), {n_embd, hparams.n_cls_out}, TENSOR_NOT_REQUIRED);
 
+    // output embedding projection
+    dense_2_out_layers   = create_tensor(tn(LLM_TENSOR_DENSE_2_OUT, "weight"), {n_embd, hparams.n_embd_out()}, TENSOR_NOT_REQUIRED);
+    dense_2_out_layers_b = create_tensor(tn(LLM_TENSOR_DENSE_2_OUT, "bias"),   {hparams.n_embd_out()        }, TENSOR_NOT_REQUIRED);
+
     for (int i = 0; i < n_layer; ++i) {
         auto & layer = layers[i];
 
@@ -51,6 +55,22 @@ std::unique_ptr<llm_graph_context> llama_model_qwen3::build_arch_graph(const llm
 }
 
 llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_params & params) : llm_graph_context(params) {
+    ggml_tensor * cur = build_backbone(model);
+
+    // Obit fork: nullptr means a non-last DPI stage already emitted its
+    // boundary hidden state (see build_backbone); there is no LM head.
+    if (cur == nullptr) {
+        return;
+    }
+
+    // lm_head
+    cur = build_lora_mm(model.output, cur, model.output_s);
+
+    cb(cur, "result_output", -1);
+    res->t_logits = cur;
+}
+
+ggml_tensor * llama_model_qwen3::graph::build_backbone(const llama_model & model) {
     const int64_t n_embd_head = hparams.n_embd_head_v();
 
     GGML_ASSERT(n_embd_head == hparams.n_embd_head_k());
@@ -148,8 +168,23 @@ llama_model_qwen3::graph::graph(const llama_model & model, const llm_graph_param
     }
     cur = inpL;
 
-    // Obit fork: either runs output_norm + lm_head (the upstream / last-
-    // stage case) or emits the post-loop hidden state as the boundary
-    // tensor. Stores res->t_embd / res->t_logits and finalizes the graph.
-    build_stage_output_or_boundary(cur, model.output_norm, model.output, model.output_s, LLM_NORM_RMS);
+    // Obit fork: a non-last DPI stage emits the post-loop hidden state as
+    // the boundary tensor and returns nullptr so the caller skips the LM
+    // head. The last stage (and every upstream / non-stage caller) runs the
+    // standard output_norm below.
+    if (stage.active && !stage.emit_logits) {
+        cb(cur, "result_stage_hidden", -1);
+        res->t_embd = cur;
+        ggml_build_forward_expand(gf, cur);
+        return nullptr;
+    }
+
+    cur = build_norm(cur,
+            model.output_norm, NULL,
+            LLM_NORM_RMS, -1);
+
+    cb(cur, "result_norm", -1);
+    res->t_embd = cur;
+
+    return cur;
 }
